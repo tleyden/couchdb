@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 
 	"github.com/go-kivik/couchdb/chttp"
@@ -216,6 +217,31 @@ func (d *db) Delete(ctx context.Context, docID, rev string, options map[string]i
 	}
 	defer func() { _ = resp.Body.Close() }()
 	return chttp.GetRev(resp)
+}
+
+func extractAttachments(doc interface{}) (*kivik.Attachments, bool) {
+	v := reflect.ValueOf(doc)
+	if v.Type().Kind() == reflect.Ptr {
+		return extractAttachments(v.Elem().Interface())
+	}
+	if stdMap, ok := doc.(map[string]interface{}); ok {
+		att, ok := stdMap["_attachments"].(kivik.Attachments)
+		return &att, ok
+	}
+	if v.Kind() != reflect.Struct {
+		return nil, false
+	}
+	for i := 0; i < v.NumField(); i++ {
+		if v.Type().Field(i).Tag.Get("json") == "_attachments" {
+			f := v.Field(i)
+			if att, ok := f.Interface().(kivik.Attachments); ok {
+				return &att, true
+			}
+			att, ok := f.Interface().(*kivik.Attachments)
+			return att, ok
+		}
+	}
+	return nil, false
 }
 
 func (d *db) Flush(ctx context.Context) error {
