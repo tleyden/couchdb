@@ -1343,10 +1343,10 @@ func TestExtractAttachments(t *testing.T) {
 		{
 			name: "in map",
 			doc: map[string]interface{}{"_attachments": kivik.Attachments{
-				"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", Body("test content")),
+				"foo.txt": &kivik.Attachment{Filename: "foo.txt", ContentType: "text/plain", Content: Body("test content")},
 			}},
 			expected: &kivik.Attachments{
-				"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", nil),
+				"foo.txt": &kivik.Attachment{Filename: "foo.txt", ContentType: "text/plain"},
 			},
 			ok: true,
 		},
@@ -1366,11 +1366,11 @@ func TestExtractAttachments(t *testing.T) {
 			name: "attachments in struct",
 			doc: attStruct{
 				Attachments: kivik.Attachments{
-					"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", Body("test content")),
+					"foo.txt": &kivik.Attachment{Filename: "foo.txt", ContentType: "text/plain", Content: Body("test content")},
 				},
 			},
 			expected: &kivik.Attachments{
-				"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", nil),
+				"foo.txt": &kivik.Attachment{Filename: "foo.txt", ContentType: "text/plain"},
 			},
 			ok: true,
 		},
@@ -1378,11 +1378,11 @@ func TestExtractAttachments(t *testing.T) {
 			name: "pointer to attachments in struct",
 			doc: attPtrStruct{
 				Attachments: &kivik.Attachments{
-					"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", Body("test content")),
+					"foo.txt": &kivik.Attachment{Filename: "foo.txt", ContentType: "text/plain", Content: Body("test content")},
 				},
 			},
 			expected: &kivik.Attachments{
-				"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", nil),
+				"foo.txt": &kivik.Attachment{Filename: "foo.txt", ContentType: "text/plain"},
 			},
 			ok: true,
 		},
@@ -1398,7 +1398,7 @@ func TestExtractAttachments(t *testing.T) {
 			name: "wrong json tag",
 			doc: wrongTagStruct{
 				Attachments: kivik.Attachments{
-					"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", Body("test content")),
+					"foo.txt": &kivik.Attachment{Filename: "foo.txt", ContentType: "text/plain", Content: Body("test content")},
 				},
 			},
 			expected: nil,
@@ -1408,21 +1408,21 @@ func TestExtractAttachments(t *testing.T) {
 			name: "pointer to struct with attachments",
 			doc: &attStruct{
 				Attachments: kivik.Attachments{
-					"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", Body("test content")),
+					"foo.txt": &kivik.Attachment{Filename: "foo.txt", ContentType: "text/plain", Content: Body("test content")},
 				},
 			},
 			expected: &kivik.Attachments{
-				"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", nil),
+				"foo.txt": &kivik.Attachment{Filename: "foo.txt", ContentType: "text/plain"},
 			},
 			ok: true,
 		},
 		{
 			name: "pointer to map with attachments",
 			doc: &(map[string]interface{}{"_attachments": kivik.Attachments{
-				"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", Body("test content")),
+				"foo.txt": &kivik.Attachment{Filename: "foo.txt", ContentType: "text/plain", Content: Body("test content")},
 			}}),
 			expected: &kivik.Attachments{
-				"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", nil),
+				"foo.txt": &kivik.Attachment{Filename: "foo.txt", ContentType: "text/plain"},
 			},
 			ok: true,
 		},
@@ -1435,10 +1435,85 @@ func TestExtractAttachments(t *testing.T) {
 			}
 			if result != nil {
 				for _, att := range *result {
-					att.ReadCloser = nil
+					att.Content = nil
 				}
 			}
 			if d := diff.Interface(test.expected, result); d != nil {
+				t.Error(d)
+			}
+		})
+	}
+}
+
+func TestReplaceAttachments(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		att      *kivik.Attachments
+		expected string
+		err      string
+	}{
+		{
+			name:  "invalid json",
+			input: "invalid json",
+			err:   "invalid character 'i' looking for beginning of value",
+		},
+		{
+			name:  "invalid object",
+			input: `[1,2,3]`,
+			err:   "expected '{', found '['",
+		},
+		{
+			name:  "json string",
+			input: `"foo"`,
+			err:   "expected '{', found 'foo'",
+		},
+		{
+			name:     "no attachments",
+			input:    `{"foo":"bar","baz":"qux"}`,
+			expected: `{"foo":"bar","baz":"qux"}`,
+		},
+		{
+			name:  "simple",
+			input: `{"_attachments":{}}`,
+			att: &kivik.Attachments{
+				"foo.txt": &kivik.Attachment{Filename: "foo.txt", ContentType: "text/plain", Content: Body("test content")},
+			},
+			expected: `{
+				"_attachments":{
+					"foo.txt":{
+						"content_type": "text/plain",
+						"data": "dGVzdCBjb250ZW50Cg=="
+					}
+				}
+			}`,
+		},
+		{
+			name: "streaming after",
+			input: `{
+				"_attachments":{},
+				"foo":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+			}`,
+			att: &kivik.Attachments{
+				"foo.txt": &kivik.Attachment{Filename: "foo.txt", ContentType: "text/plain", Content: Body("test content")},
+			},
+			expected: `{
+				"_attachments":{
+					"foo.txt":{
+						"content_type": "text/plain",
+						"data": "dGVzdCBjb250ZW50Cg=="
+					}
+				},
+				"foo":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+			}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			in := ioutil.NopCloser(strings.NewReader(test.input))
+			result, err := ioutil.ReadAll(replaceAttachments(in, test.att))
+			testy.Error(t, test.err, err)
+			if d := diff.JSON([]byte(test.expected), result); d != nil {
 				t.Error(d)
 			}
 		})
