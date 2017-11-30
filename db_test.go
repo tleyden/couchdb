@@ -1,6 +1,7 @@
 package couchdb
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1514,6 +1515,58 @@ func TestReplaceAttachments(t *testing.T) {
 			result, err := ioutil.ReadAll(replaceAttachments(in, test.att))
 			testy.Error(t, test.err, err)
 			if d := diff.JSON([]byte(test.expected), result); d != nil {
+				t.Error(d)
+			}
+		})
+	}
+}
+
+func TestMultipartAttachments(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		att      *kivik.Attachments
+		expected string
+		err      string
+	}{
+		{
+			name:  "no attachments",
+			input: `{"foo":"bar","baz":"qux"}`,
+			expected: `
+--%[1]s
+Content-Type: application/json
+
+{"foo":"bar","baz":"qux"}
+--%[1]s--
+`,
+		},
+		{
+			name:  "simple",
+			input: `{"_attachments":{}}`,
+			att: &kivik.Attachments{
+				"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", Body("test content")),
+			},
+			expected: `
+--%[1]s
+Content-Type: application/json
+
+{"_attachments":{"foo.txt":{"content_type":"text/plain","data":"dGVzdCBjb250ZW50Cg=="}}
+}
+--%[1]s--
+`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			in := ioutil.NopCloser(strings.NewReader(test.input))
+			boundary, body := multipartAttachments(in, test.att)
+			result, err := ioutil.ReadAll(body)
+			testy.Error(t, test.err, err)
+			fmt.Printf("result:\n%s\n", string(result))
+			expected := fmt.Sprintf(test.expected, boundary)
+			expected = strings.TrimPrefix(expected, "\n")
+			result = bytes.Replace(result, []byte("\r\n"), []byte("\n"), -1)
+			if d := diff.Text(expected, string(result)); d != nil {
 				t.Error(d)
 			}
 		})
