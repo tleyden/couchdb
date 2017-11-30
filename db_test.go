@@ -1484,7 +1484,7 @@ func TestReplaceAttachments(t *testing.T) {
 				"_attachments":{
 					"foo.txt":{
 						"content_type": "text/plain",
-						"data": "dGVzdCBjb250ZW50Cg=="
+						"follows": true
 					}
 				}
 			}`,
@@ -1502,7 +1502,7 @@ func TestReplaceAttachments(t *testing.T) {
 				"_attachments":{
 					"foo.txt":{
 						"content_type": "text/plain",
-						"data": "dGVzdCBjb250ZW50Cg=="
+						"follows": true
 					}
 				},
 				"foo":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
@@ -1550,7 +1550,7 @@ Content-Type: application/json
 --%[1]s
 Content-Type: application/json
 
-{"_attachments":{"foo.txt":{"content_type":"text/plain","data":"dGVzdCBjb250ZW50Cg=="}}
+{"_attachments":{"foo.txt":{"content_type":"text/plain","follows":true}}
 }
 --%[1]s--
 `,
@@ -1567,6 +1567,35 @@ Content-Type: application/json
 			expected = strings.TrimPrefix(expected, "\n")
 			result = bytes.Replace(result, []byte("\r\n"), []byte("\n"), -1)
 			if d := diff.Text(expected, string(result)); d != nil {
+				t.Error(d)
+			}
+		})
+	}
+}
+
+func TestAttachmentStubs(t *testing.T) {
+	tests := []struct {
+		name     string
+		atts     *kivik.Attachments
+		expected map[string]interface{}
+	}{
+		{
+			name: "simple",
+			atts: &kivik.Attachments{
+				"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", Body("test content")),
+			},
+			expected: map[string]interface{}{
+				"foo.txt": map[string]interface{}{
+					"follows":      true,
+					"content_type": "text/plain",
+				},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := attachmentStubs(test.atts)
+			if d := diff.Interface(test.expected, result); d != nil {
 				t.Error(d)
 			}
 		})
