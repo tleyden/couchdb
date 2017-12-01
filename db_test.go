@@ -1352,6 +1352,16 @@ func TestExtractAttachments(t *testing.T) {
 			ok: true,
 		},
 		{
+			name: "pointer in map",
+			doc: map[string]interface{}{"_attachments": &kivik.Attachments{
+				"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", Body("test content")),
+			}},
+			expected: &kivik.Attachments{
+				"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", nil),
+			},
+			ok: true,
+		},
+		{
 			name:     "wrong type in map",
 			doc:      map[string]interface{}{"_attachments": "oink"},
 			expected: nil,
@@ -1426,6 +1436,11 @@ func TestExtractAttachments(t *testing.T) {
 				"foo.txt": &kivik.Attachment{Filename: "foo.txt", ContentType: "text/plain"},
 			},
 			ok: true,
+		},
+		{
+			name: "nil doc",
+			doc:  nil,
+			ok:   false,
 		},
 	}
 	for _, test := range tests {
@@ -1525,13 +1540,14 @@ func TestMultipartAttachments(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		att      *kivik.Attachments
+		atts     *kivik.Attachments
 		expected string
 		err      string
 	}{
 		{
 			name:  "no attachments",
 			input: `{"foo":"bar","baz":"qux"}`,
+			atts:  &kivik.Attachments{},
 			expected: `
 --%[1]s
 Content-Type: application/json
@@ -1543,7 +1559,7 @@ Content-Type: application/json
 		{
 			name:  "simple",
 			input: `{"_attachments":{}}`,
-			att: &kivik.Attachments{
+			atts: &kivik.Attachments{
 				"foo.txt": kivik.NewAttachment("foo.txt", "text/plain", Body("test content")),
 			},
 			expected: `
@@ -1552,6 +1568,12 @@ Content-Type: application/json
 
 {"_attachments":{"foo.txt":{"content_type":"text/plain","follows":true}}
 }
+--%[1]s
+Content-Disposition: attachment; filename="foo.txt"
+Content-Type: text/plain
+
+test content
+
 --%[1]s--
 `,
 		},
@@ -1559,7 +1581,7 @@ Content-Type: application/json
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			in := ioutil.NopCloser(strings.NewReader(test.input))
-			boundary, body := multipartAttachments(in, test.att)
+			boundary, body := multipartAttachments(in, test.atts)
 			result, err := ioutil.ReadAll(body)
 			testy.Error(t, test.err, err)
 			fmt.Printf("result:\n%s\n", string(result))
