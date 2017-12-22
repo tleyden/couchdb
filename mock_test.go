@@ -5,11 +5,14 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kivik/couchdb/chttp"
+	"github.com/go-kivik/kiviktest/kt"
+	"github.com/pkg/errors"
 )
 
 type customTransport func(*http.Request) (*http.Response, error)
@@ -79,4 +82,24 @@ func consume(r io.ReadCloser) error {
 	defer r.Close() // nolint: errcheck
 	_, e := ioutil.ReadAll(r)
 	return e
+}
+
+func realDB(t *testing.T) *db {
+	driver := &Couch{}
+	c, err := driver.NewClient(context.Background(), kt.DSN(t))
+	if err != nil {
+		if _, ok := errors.Cause(err).(*url.Error); ok {
+			t.Skip("Cannot connect to CouchDB")
+		}
+		t.Fatal(err)
+	}
+	dbname := kt.TestDBName(t)
+
+	if err := c.CreateDB(context.Background(), dbname, nil); err != nil {
+		t.Fatal(err)
+	}
+	return &db{
+		client: c.(*client),
+		dbName: dbname,
+	}
 }

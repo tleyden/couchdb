@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -178,11 +179,19 @@ func (d *db) Put(ctx context.Context, docID string, doc interface{}, options map
 		Body:       chttp.EncodeBody(doc),
 		FullCommit: fullCommit,
 	}
+	atts, ok := extractAttachments(doc)
+	if ok {
+		boundary, multipartBody := multipartAttachments(opts.Body, atts)
+		opts.Body = multipartBody
+		fmt.Printf("boundary = %s\n", boundary)
+		opts.ContentType = fmt.Sprintf("multipart/related; boundary=%s", boundary)
+	}
 	var result struct {
 		ID  string `json:"id"`
 		Rev string `json:"rev"`
 	}
 	_, err = d.Client.DoJSON(ctx, kivik.MethodPut, d.path(chttp.EncodeDocID(docID), nil), opts, &result)
+	fmt.Printf("DoJSON error: %s\n", err)
 	if err != nil {
 		return "", err
 	}
@@ -196,6 +205,9 @@ func (d *db) Put(ctx context.Context, docID string, doc interface{}, options map
 const attachmentsKey = "_attachments"
 
 func extractAttachments(doc interface{}) (*kivik.Attachments, bool) {
+	if doc == nil {
+		return nil, false
+	}
 	v := reflect.ValueOf(doc)
 	if v.Type().Kind() == reflect.Ptr {
 		return extractAttachments(v.Elem().Interface())
@@ -236,6 +248,7 @@ func interfaceToAttachments(i interface{}) (*kivik.Attachments, bool) {
 // multipart/related output suitable for a PUT request.
 func multipartAttachments(in io.ReadCloser, att *kivik.Attachments) (string, io.ReadCloser) {
 	r, w := io.Pipe()
+	fmt.Printf("multipartAttachments r: %p\n", r)
 	body := multipart.NewWriter(w)
 	go func() {
 		err := createMultipart(body, in, att)
@@ -243,7 +256,9 @@ func multipartAttachments(in io.ReadCloser, att *kivik.Attachments) (string, io.
 		if err == nil {
 			err = e
 		}
+		fmt.Printf("closing w\n")
 		_ = w.CloseWithError(err)
+		fmt.Printf("w closed\n")
 	}()
 	return body.Boundary(), r
 }
@@ -260,18 +275,29 @@ func createMultipart(w *multipart.Writer, r io.ReadCloser, atts *kivik.Attachmen
 		return e
 	}
 
-	for filename, att := range *atts {
+	// Sort the filenames to ensure order consistent with json.Marshal's ordering
+	// of the stubs in the body
+	filenames := make([]string, 0, len(*atts))
+	for filename := range *atts {
+		filenames = append(filenames, filename)
+	}
+
+	for _, filename := range filenames {
+		att := (*atts)[filename]
 		file, err := w.CreatePart(textproto.MIMEHeader{
-			"Content-Type":        {att.ContentType},
-			"Content-Disposition": {fmt.Sprintf(`attachment; filename=%q`, filename)},
+		// "Content-Type":        {att.ContentType},
+		// "Content-Disposition": {fmt.Sprintf(`attachment; filename=%q`, filename)},
 		})
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(file, att); err != nil {
-			return err
-		}
-		_ = att.Close()
+		x, _ := ioutil.ReadAll(att.Content)
+		fmt.Printf("x:\n%s\n", string(x))
+		file.Write(x)
+		// if _, err := io.Copy(file, att); err != nil {
+		// 	return err
+		// }
+		_ = att.Content.Close()
 	}
 
 	return w.Close()
@@ -292,15 +318,33 @@ func replaceAttachments(in io.ReadCloser, atts *kivik.Attachments) io.ReadCloser
 	return r
 }
 
-func attachmentStubs(atts *kivik.Attachments) map[string]interface{} {
+type stub struct {
+	ContentType string `json:"content_type"`
+	Size        int64  `json:"length"`
+}
+
+func (s *stub) MarshalJSON() ([]byte, error) {
+	type attJSON struct {
+		stub
+		Follows bool `json:"follows"`
+	}
+	att := attJSON{
+		stub:    *s,
+		Follows: true,
+	}
+	return json.Marshal(att)
+}
+
+func attachmentStubs(atts *kivik.Attachments) map[string]*stub {
 	if atts == nil {
 		return nil
 	}
-	result := make(map[string]interface{}, len(*atts))
+	result := make(map[string]*stub, len(*atts))
 	for filename, att := range *atts {
-		result[filename] = map[string]interface{}{
-			"content_type": att.ContentType,
-			"follows":      true,
+		setSize(att)
+		result[filename] = &stub{
+			ContentType: att.ContentType,
+			Size:        att.Size,
 		}
 	}
 	return result

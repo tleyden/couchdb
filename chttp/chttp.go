@@ -179,7 +179,8 @@ func (c *Client) DoReq(ctx context.Context, method, path string, opts *Options) 
 	}
 	fixPath(req, path)
 	setHeaders(req, opts)
-
+	// dr, err := httputil.DumpRequest(req, true)
+	// fmt.Printf("%s\nERR: %s\n", string(dr), err)
 	response, err := c.Do(req)
 	return response, netError(err)
 }
