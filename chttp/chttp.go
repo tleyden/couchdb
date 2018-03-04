@@ -3,9 +3,12 @@
 package chttp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -173,7 +176,26 @@ func (c *Client) DoReq(ctx context.Context, method, path string, opts *Options) 
 			body = opts.Body
 		}
 	}
-	req, err := c.NewRequest(ctx, method, path, body)
+
+	// read the whole body into a string
+
+	var destBody io.Reader
+	destBody = body
+
+	if body != nil {
+
+		entireBody, err := ioutil.ReadAll(body)
+		if err != nil {
+			log.Printf("Error reading body: %v", err)
+		}
+		log.Printf("body size: %d bytes", len(entireBody))
+
+		body2 := bytes.NewBuffer(entireBody)
+		destBody = body2
+
+	}
+
+	req, err := c.NewRequest(ctx, method, path, destBody)
 	if err != nil {
 		return nil, err
 	}
