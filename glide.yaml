@@ -1,4 +1,4 @@
-package: github.com/go-kivik/couchdb
+package: github.com/tleyden/couchdb
 ignore:
 - github.com/gopherjs/gopherjs
 import:

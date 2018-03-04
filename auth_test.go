@@ -7,7 +7,7 @@ import (
 
 	"github.com/flimzy/testy"
 
-	"github.com/go-kivik/couchdb/chttp"
+	"github.com/tleyden/couchdb/chttp"
 	"github.com/go-kivik/kivik"
 	"github.com/go-kivik/kivik/errors"
 )

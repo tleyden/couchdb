@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kivik/couchdb/chttp"
+	"github.com/tleyden/couchdb/chttp"
 )
 
 type customTransport func(*http.Request) (*http.Response, error)
